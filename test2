@@ -1,0 +1,275 @@
+import queue
+import threading
+from subprocess import Popen, PIPE
+from threading import Thread
+import multiprocessing
+from tkinter import ttk
+import time
+from tkinter import filedialog, Text
+from tkinter.scrolledtext import ScrolledText
+from tkinter.ttk import Progressbar
+
+from PIL import Image, ImageTk
+from tools import *
+from managers import *
+from db import *
+import requests
+from requests.auth import HTTPBasicAuth
+from requests_toolbelt.threaded import pool
+
+
+class Robot(threading.Thread):
+    def __init__(self, name: str, label_queue: queue.Queue, end_pos: int):
+        super().__init__(name=name)
+        self.daemon = True
+        self.label_queue = label_queue
+        self.end_pos = end_pos
+
+    def run(self) -> None:
+        for angle in range(self.end_pos):
+            self.label_queue.put(angle)
+            time.sleep(0.01)
+
+
+class LabelUpdater(threading.Thread):
+    def __init__(self, master, name, label_queue, variable):
+        super().__init__(name=name)
+        self.daemon = True
+        self.label_queue = label_queue
+        self.master = master
+        self.variable = variable
+
+    def run(self) -> None:
+        # run forever
+        while True:
+            # wait a second please
+            time.sleep(1)
+            # consume all the queue and keep only the last message
+            last_msg = None
+            while True:
+                try:
+                    msg = self.label_queue.get(block=False)
+                except queue.Empty:
+                    break
+                last_msg = msg
+                self.label_queue.task_done()
+            if last_msg:
+                self.variable.set(last_msg)
+
+
+class StepperMotors:
+    def __init__(self, root):
+        self.root = root
+        self.label_one_queue = queue.Queue()
+        self.label_two_queue = queue.Queue()
+
+        self.start_btn = tk.Button(root, text="Start", command=lambda: self.start_movement())
+        self.start_btn.config(width=10)
+        self.start_btn.grid(row=1, column=1)
+
+        self.text_one = tk.StringVar()
+        self.text_one.set("one")
+        self.label_one = tk.Label(root, textvariable=self.text_one)
+        self.label_one.config(width=10)
+        self.label_one.grid(row=2, column=1)
+
+        self.text_two = tk.StringVar()
+        self.text_two.set("two")
+        self.label_two = tk.Label(root, textvariable=self.text_two)
+        self.label_two.config(width=10)
+        self.label_two.grid(row=3, column=1)
+
+        self.robot_one = Robot("robot_one", self.label_one_queue, 100)
+        self.robot_two = Robot("robot_two", self.label_two_queue, 500)
+
+        self.updater_one = LabelUpdater("updater_one", self.label_one_queue, self.root, self.text_one)
+        self.updater_two = LabelUpdater("updater_two", self.label_two_queue, self.root, self.text_two)
+        self.updater_one.start()
+        self.updater_two.start()
+
+    def start_movement(self):
+        self.robot_one.start()
+        self.robot_two.start()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.title("test")
+    stepper = StepperMotors(root)
+    root.mainloop()
+
+# from tk import *
+#
+# class MyApp:
+#     def __init__(self, parent):
+#
+#         #------ constants for controlling layout of buttons ------
+#         button_width = 15
+#         button_padx = "2m"
+#         button_pady = "1m"
+#         buttons_frame_padx =  "3m"
+#         buttons_frame_pady =  "0m"
+#         buttons_frame_ipadx = "3m"
+#         buttons_frame_ipady = "0m"
+#         # -------------- end button constants ----------------
+#
+#         # First declare ORIGINAL Window area
+#         self.myParent = parent
+#         self.myParent.geometry("640x400")
+#
+#         # Layer ONE
+#         ### Our First layer/frame is called frameLayerOne
+#         self.frameLayerOne = Frame(parent, bg="green")
+#         self.frameLayerOne.pack(expand=YES, fill=BOTH)
+#
+#         ### We will stack vertically inside frameLayerOne.
+#         ### Inside frameLayerOne, we will create
+#         ### a menu_frame, then a sub frame into which we will
+#         ### put an output_frame and an input_frame.
+#
+#         # Layer TWO
+#         # MENU FRAME - Layer Two
+#         self.menu_frame = Frame(self.frameLayerOne, borderwidth=5,  relief=RIDGE, bg="cyan")
+#         self.menu_frame.pack(side=TOP, expand=NO,  padx=0, pady=0, ipadx=0, ipady=0, fill=X)
+#
+#         MessageMenuFrame="Menu frame.\n"
+#         # Label(self.menu_frame, text=MessageMenuFrame, justify=LEFT).pack(side=TOP, anchor=W)
+#
+#         # buttons frame
+#         self.buttons_frame = Frame(self.menu_frame) # , bg="red"
+#         self.buttons_frame.pack(side=TOP,
+#             ipadx=buttons_frame_ipadx,
+#             ipady=buttons_frame_ipady,
+#             padx=buttons_frame_padx,
+#             pady=buttons_frame_pady,)
+#
+#         # now we add the buttons to the buttons_frame
+#         self.button1 = Button(self.buttons_frame, command=self.button1Click)
+#         self.button1.configure(text="CONNECT", background= "green")
+#         self.button1.focus_force()
+#         self.button1.configure(width=button_width,
+#             padx=button_padx,
+#             pady=button_pady)
+#
+#         self.button1.pack(side=LEFT)
+#         # T3 - bound to regular button1Click
+#         self.button1.bind("<Return>", self.button1Click)
+#
+#         self.button2 = Button(self.buttons_frame, command=self.button2Click)
+#         self.button2.configure(text="QUIT", background="red")
+#         self.button2.configure(width=button_width,
+#             padx=button_padx,
+#             pady=button_pady)
+#
+#         self.button2.pack(side=RIGHT)
+#         # T3 - bound to regular button2Click
+#         self.button2.bind("<Return>", self.button2Click)
+#
+#         # SUB FRAME - Layer Two
+#         self.sub_frame = Frame(self.frameLayerOne) # , bg="red"
+#         self.sub_frame.pack(side=BOTTOM, expand=YES,  padx=0, pady=0, ipadx=0, ipady=0, fill=BOTH)
+#
+#         # Layer THREE
+#         # INPUT FRAME - Layer Three
+#         self.input_frame = Frame(self.sub_frame, borderwidth=5,  relief=RIDGE, bg="black")
+#         self.input_frame.pack(side=BOTTOM, expand=NO,  padx=0, pady=0, ipadx=0, ipady=0, fill=X)
+#
+#         # Text widget for user input to send to server
+#         self.InputText = Text(self.input_frame, height=4, bg="black", fg="green")
+#         self.InputText.pack()
+#         self.InputText.insert(END, "User input here")
+#
+#         self.InputText.bind('<Return>', self.return_key)
+#
+#         # OUTPUT FRAME - Layer Three
+#         self.output_frame = Frame(self.sub_frame, borderwidth=5,  relief=RIDGE, bg="blue")
+#         self.output_frame.pack(side=BOTTOM, expand=YES,  padx=0, pady=0, ipadx=5, ipady=25, fill=BOTH)
+#
+#         # Text widget for output from code and server
+#         self.OutputText = Text(self.output_frame, bg="black", fg="green")
+#         self.OutputText.pack()
+#         self.OutputText.insert(END, "server and code output here")
+#
+#
+#     def return_key(self, event):
+#         text = "you pressed Return"
+#         self.OutputText.insert(END, "\n"+text)
+#
+#     def button1Click(self, event=None): # T3 - give it a default event of None
+#         if self.button1["background"] == "green":
+#             self.button1["background"] = "yellow"
+#         else:
+#             self.button1["background"] = "green"
+#         self.button1.focus_set() # T3 - set focus to this button so Return works
+#
+#     def button2Click(self, event=None): # T3 - give it a default event of None
+#         self.myParent.destroy()
+#
+# root = Tk()
+# myapp = MyApp(root)
+# root.mainloop()
+
+# import subprocess
+# from queue import Queue
+# from threading import Thread
+#
+# from tk import Tk, Button, END, filedialog
+# from tk.filedialog import FileDialog
+# from tk.scrolledtext import ScrolledText
+#
+#
+# class RunThread(Thread):
+#     def __init__(self, filepath):
+#         super(RunThread, self).__init__()
+#         self.filepath = filepath
+#         self.output = Queue()
+#         self.finished = False
+#
+#     def run(self):
+#         p = subprocess.Popen("",
+#                              stdout=subprocess.PIPE,
+#                              stderr=subprocess.STDOUT,
+#                              )
+#         for line in iter(p.stdout.readline, ''):
+#             self.output.put(line)
+#         self.finished = True
+#
+#
+# class Application(object):
+#     run_thread = None
+#
+#     def run(self):
+#         self.root = Tk()
+#         self.code = ScrolledText(self.root)
+#         self.code.pack()
+#         self.output = ScrolledText(self.root)
+#         self.output.pack()
+#         self.run = Button(self.root, text="Run", command=self.run_script)
+#         self.run.pack()
+#         self.root.mainloop()
+#
+#     def run_script(self):
+#         if self.run_thread:
+#             return
+#         script = self.code.get(1.0, END)
+#         filepath = filedialog.asksaveasfilename()
+#         if filepath:
+#             if not filepath.endswith('.py'):
+#                 filepath += '.py'
+#             with open(filepath, 'w') as f:
+#                 f.write(script)
+#             self.run_thread = RunThread(filepath)
+#             self.run_thread.start()
+#             self.read_output()
+#
+#     def read_output(self):
+#         while not self.run_thread.output.empty():
+#             line = self.run_thread.output.get()
+#             self.output.insert(END, line)
+#         if self.run_thread.finished:
+#             self.output.insert(END, "%s Finished" % self.run_thread.filepath)
+#             self.run_thread = None
+#         else:
+#             self.root.after(100, self.read_output)
+#
+#
+# Application().run()

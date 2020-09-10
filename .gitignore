@@ -1,0 +1,9 @@
+/venv/
+/wallet_data/
+/dist/
+/build/
+/.api_secret
+/epic-wallet.toml
+/epic-wallet.log
+/gui.spec
+/wallet/
