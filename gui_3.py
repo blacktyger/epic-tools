@@ -91,10 +91,10 @@ class Footer(tk.Frame):
     def __init__(self, master, *args, **kwargs):
         tk.Frame.__init__(self, master, *args, **kwargs)
 
-        self.configure(bg="brown")
+        self.configure(bg="black")
 
-        self.width_label = tk.Label(self, text='Width:')
-        self.entry_W = tk.Entry(self, background="pink")
+        self.label = tk.Label(self, bg="black", fg="white", text='Epic-Py wallet by `blacktyg3r')
+        # self.entry = tk.Entry(self, background="pink")
 
-        self.entry_W.grid(row=0, column=1)
-        self.width_label.grid(row=0, column=0)
+        # self.entry.grid(row=0, column=1)
+        self.label.grid(row=0, column=0, sticky="news")

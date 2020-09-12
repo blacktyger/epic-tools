@@ -30,9 +30,9 @@ class HomeFirstTime(tk.Frame):
         # HomeFirstTime config
         # resp_grid(self, 2, 1)
         self.bg_img = tk.PhotoImage(file=r'C:\epic-tools\img\bg7.png')
-        self.label_area = tk.Canvas(self, width=450, height=40, borderwidth=0,
+        self.label_area = tk.Canvas(self, width=500, height=40, borderwidth=0,
                                     highlightthickness=0, bg='black')
-        self.btns_area = tk.Canvas(self, width=450, height=800, borderwidth=0,
+        self.btns_area = tk.Canvas(self, width=500, height=800, borderwidth=0,
                                    highlightthickness=0)
 
         self.columnconfigure(0, minsize=500, weight=1)
@@ -45,6 +45,7 @@ class HomeFirstTime(tk.Frame):
         self.label_area.grid(sticky="news")
         self.btns_area.grid(sticky="news")
         self.btns_area.create_image(0, 0, image=self.bg_img, anchor='nw')
+
         self.create_wallet_btn = tk.Button(self.btns_area, bg="#e6b800",
                                            borderwidth=1,
                                            text="Create New Wallet",
@@ -56,12 +57,23 @@ class HomeFirstTime(tk.Frame):
 
         if self.scan_for_seed():
             # EXISTING WALLET LOGIN
-            self.btns_area.create_text(250, 150, fill="white", font="Times 20 bold",
-                                       text="LOGIN TO WALLET")
-            self.wallet.password_input(widget=self.btns_area).grid(row=0, column=0, ipadx=130, ipady=15,
-                                                                   padx=50, pady=220)
-            self.wallet.send_password_btn(widget=self.btns_area, bg="gold").grid(row=1, column=0, ipadx=140,
-                                                                      ipady=10, padx=20, pady=0)
+            # self.btns_area.create_text(250, 150, fill="white", font="Times 20 bold",
+            #                            text="LOGIN TO WALLET")
+            pass_input = self.wallet.password_input(widget=self.btns_area)
+            pass_btn = self.wallet.send_password_btn(widget=self.btns_area, bg="gold")
+
+            self.btns_area.create_window(int(self.btns_area['width']) / 2, 410,
+                                         window=pass_input, height=40, width=380)
+            self.btns_area.create_window(int(self.btns_area['width']) / 2, 500,
+                                         window=pass_btn, height=34, width=300)
+
+            self.pass_info = self.btns_area.create_text(int(self.btns_area['width']) / 2, 445,
+                                                        fill="white", font="Helvetica 11 bold",
+                                                        text="Please provide wallet password")
+            self.btns_area.create_window(150, 700,
+                                         window=self.create_wallet_btn, height=25, width=150)
+            self.btns_area.create_window(350, 700,
+                                         window=self.import_wallet_btn, height=25, width=150)
 
         else:
             # NO WALLET SEED SCREEN Grid

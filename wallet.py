@@ -10,7 +10,7 @@ import time
 from tkinter import filedialog, Text
 from tkinter.scrolledtext import ScrolledText
 from tkinter.ttk import Progressbar
-
+from decimal import *
 from PIL import Image, ImageTk
 from tinydb import Query
 
@@ -21,6 +21,8 @@ import db
 import requests
 from requests.auth import HTTPBasicAuth
 from requests_toolbelt.threaded import pool
+
+getcontext().prec = 8
 
 
 class Frame(tk.Frame):
@@ -78,27 +80,55 @@ class WalletInterface(tk.Frame):
         tk.Frame.__init__(self, master, *args, **kwargs)
         print('gui')
         self.balance = tk.StringVar()
-        self.bg_img = tk.PhotoImage(file=r'C:\epic-tools\img\bg7.png')
+        self.bg_img = tk.PhotoImage(file=r'C:\epic-tools\img\main_screen_bg.png')
         self.btns_area = tk.Canvas(self, width=450, height=800, borderwidth=0,
                                    highlightthickness=0)
-        self.label = ScrolledText(master=self.btns_area, bg="#7A5454")
+        self.balance = tk.StringVar()
 
         self.columnconfigure(0, minsize=500, weight=1)
-        # self.grid_rowconfigure(0, minsize=50, weight=1)
         self.grid_rowconfigure(0, minsize=750, weight=1)
 
         # WalletInterface Widgets
         self.btns_area.grid(sticky="news")
         self.btns_area.create_image(0, 0, image=self.bg_img, anchor='nw')
-        self.label.grid(row=0, column=0)
         self.get_balance()
+        self.btns_area.create_text(240, 105, fill="gold", font="Times 28 bold",
+                                   text=self.balance.get())
+        
+        self.run_console_btn = tk.Button(self, text="Run command line console",
+                                         command=self.master.wallet.run_console, **kwargs)
+        self.btns_area.create_window(int(self.btns_area['width']) / 2, 600,
+                                     window=self.run_console_btn)
 
     def get_balance(self):
-        balance = Command(command="info", password=self.master.wallet.password, node=self.master.wallet.node)
-        balance.start()
-        self.label.insert(tk.END, type([balance.stdout]))
+        data = APIManager()
+        balance = data.run_query(query="retrieve_summary_info")
+        self.balance.set(balance)
 
 
+class APIManager:
+    def __init__(self, api_secret="DcxeGBwtZY3FlZcnDFmI", url=fr"http://localhost:23420/v1/wallet/owner/"):
+        self.url = url
+        self.api_secret = api_secret
+        self.auth = ('epic', self.api_secret)
+
+    def run_query(self, query, params="", output='json'):
+        response = {}
+        r = requests.get(self.url + query + params, auth=self.auth)
+        print(self.url + query + params)
+        if output == 'json':
+            response = r.json()[1]
+            data = Decimal(response['total']) / 10 ** 8
+            data = data.quantize(Decimal('.0001'), rounding=ROUND_UP)
+            return data
+
+    def insert(self, widget, query):
+        data = Decimal(self.run_query(query=query)['total']) / 10 ** 8
+        data = data.quantize(Decimal('.0001'), rounding=ROUND_UP)
+        widget.insert(tk.END, data)
+
+    def match_query(self):
+        pass
 
 
 class Wallet:
@@ -113,29 +143,40 @@ class Wallet:
         self.online_nodes = ["http://95.216.215.107:3413/"]
         self.node = self.online_nodes[0]
 
+    def run_console(self):
+        new_window = tk.Toplevel(self.master)
+        self.wallet_window = WalletFrame(new_window)
+        self.wallet_window.master.geometry('770x600+630+0')
+        resp_grid(self.wallet_window, 2, 2)
+        self.wallet_window.grid(sticky="nswe")
+
     def password_input(self, widget, **kwargs):
-        self.input = tk.Entry(master=widget, bg="#74e893",
+        self.input = tk.Entry(master=widget, bg="#52504a",
                               show="*", **kwargs)
         self.input.bind('<Return>', self.login)
         return self.input
 
     def send_password_btn(self, widget, **kwargs):
         self.widget = widget
-        self.button = tk.Button(master=widget, text="Send",
+        self.button = tk.Button(master=widget, text="Login to wallet",
                                 command=self.login, **kwargs)
         self.button.bind('<Return>', self.login)
         return self.button
 
-    def login(self,  event=None):
+    def login(self, event=None):
         self.password = self.input.get()
         self.input.delete(0, tk.END)
         print(f"{self.password} saved")
+        self.widget.itemconfigure(self.master.pass_info, text="Loading...")
+
         if self.check_password():
             self.widget.delete('all')
             self.widget.destroy()
             self.interface = WalletInterface(master=self.master)
             self.interface.grid(sticky="news")
+
         else:
+            self.widget.itemconfigure(self.master.pass_info, text="Wrong password")
             print("NIE")
             pass
 
