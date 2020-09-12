@@ -28,13 +28,23 @@ class HomeFirstTime(tk.Frame):
         tk.Frame.__init__(self, master, *args, **kwargs)
 
         # HomeFirstTime config
-        resp_grid(self, 1, 1)
+        # resp_grid(self, 2, 1)
         self.bg_img = tk.PhotoImage(file=r'C:\epic-tools\img\bg7.png')
-        self.btns_area = tk.Canvas(self, width=450, borderwidth=0,
+        self.label_area = tk.Canvas(self, width=450, height=40, borderwidth=0,
+                                    highlightthickness=0, bg='black')
+        self.btns_area = tk.Canvas(self, width=450, height=800, borderwidth=0,
                                    highlightthickness=0)
 
+        self.columnconfigure(0, minsize=500, weight=1)
+        self.grid_rowconfigure(0, minsize=50, weight=1)
+        self.grid_rowconfigure(1, minsize=750, weight=1)
+
         # HomeFirstTime Widgets
+        self.wallet = Wallet(master=self, login_redirect=HomeWalletImport(master=self))
         self.wallet_import = HomeWalletImport(self.btns_area)
+        self.label_area.grid(sticky="news")
+        self.btns_area.grid(sticky="news")
+        self.btns_area.create_image(0, 0, image=self.bg_img, anchor='nw')
         self.create_wallet_btn = tk.Button(self.btns_area, bg="#e6b800",
                                            borderwidth=1,
                                            text="Create New Wallet",
@@ -44,13 +54,31 @@ class HomeFirstTime(tk.Frame):
                                            text="Import Wallet",
                                            command=self.import_command)
 
-        # HomeFirstTime Grid
-        self.btns_area.grid(sticky="new")
-        self.btns_area.create_image(0, 0, image=self.bg_img, anchor='nw')
-        self.import_wallet_btn.grid(row=0, column=0, ipady=10,
-                                    padx=40, ipadx=150, pady=420, sticky="new")
-        self.create_wallet_btn.grid(row=0, column=0, ipady=10,
-                                    padx=40, pady=490, ipadx=150, sticky="new")
+        if self.scan_for_seed():
+            # EXISTING WALLET LOGIN
+            self.btns_area.create_text(250, 150, fill="white", font="Times 20 bold",
+                                       text="LOGIN TO WALLET")
+            self.wallet.password_input(widget=self.btns_area).grid(row=0, column=0, ipadx=130, ipady=15,
+                                                                   padx=50, pady=220)
+            self.wallet.send_password_btn(widget=self.btns_area, bg="gold").grid(row=1, column=0, ipadx=140,
+                                                                      ipady=10, padx=20, pady=0)
+
+        else:
+            # NO WALLET SEED SCREEN Grid
+            self.import_wallet_btn.grid(row=0, column=0, ipady=10,
+                                        padx=40, ipadx=150, pady=420, sticky="new")
+            self.create_wallet_btn.grid(row=0, column=0, ipady=10,
+                                        padx=40, pady=250, ipadx=150, sticky="new")
+
+    def scan_for_seed(self):
+        user = os.getlogin()
+        file = "wallet.seed"
+        default_path = fr"C:\Users\{user}\.epic\main\wallet_data\{file}"
+
+        if os.path.exists(default_path):
+            return True
+        else:
+            return False
 
     def import_command(self):
         self.import_wallet_btn.destroy()
@@ -80,7 +108,7 @@ class HomeWalletImport(tk.Frame):
         # HomeFirstTime config
         resp_grid(self, 1, 1)
         # self['bg'] = "red"
-        self.wallet = Wallet(password="majkut11")
+        self.wallet = Wallet(master=self)
         self.bg_img = tk.PhotoImage(file=r'C:\epic-tools\img\bg7.png')
         self.btns_area = tk.Canvas(self, width=500, height=780, borderwidth=0,
                                    highlightthickness=0, bg="white")

@@ -14,6 +14,7 @@ from tkinter.ttk import Progressbar
 from PIL import Image, ImageTk
 from tinydb import Query
 
+from server import Server
 from tools import *
 from managers import *
 import db
@@ -56,10 +57,113 @@ class HeaderFrame(Frame):
         # self.after(1000, self.node_status)
 
 
-class Wallet:
-    def __init__(self, password):
+class Command(Thread):
+    def __init__(self, command, password, node="local_node"):
+        self.command = command
         self.password = password
+        if node == "local_node":
+            self.full_cmd = f'epic-wallet -p {self.password} {command}'.split(" ")
+        else:
+            self.full_cmd = f'epic-wallet -p {self.password} -r {node} {command}'.split(" ")
+        Thread.__init__(self)
+
+        process = Popen(self.full_cmd, stdout=PIPE, stderr=PIPE,
+                        universal_newlines=True, bufsize=1)
+        self.stdout, self.stderr = process.communicate()
+        # print(self.stdout)
+
+
+class WalletInterface(tk.Frame):
+    def __init__(self, master, *args, **kwargs):
+        tk.Frame.__init__(self, master, *args, **kwargs)
+        print('gui')
+        self.balance = tk.StringVar()
+        self.bg_img = tk.PhotoImage(file=r'C:\epic-tools\img\bg7.png')
+        self.btns_area = tk.Canvas(self, width=450, height=800, borderwidth=0,
+                                   highlightthickness=0)
+        self.label = ScrolledText(master=self.btns_area, bg="#7A5454")
+
+        self.columnconfigure(0, minsize=500, weight=1)
+        # self.grid_rowconfigure(0, minsize=50, weight=1)
+        self.grid_rowconfigure(0, minsize=750, weight=1)
+
+        # WalletInterface Widgets
+        self.btns_area.grid(sticky="news")
+        self.btns_area.create_image(0, 0, image=self.bg_img, anchor='nw')
+        self.label.grid(row=0, column=0)
+        self.get_balance()
+
+    def get_balance(self):
+        balance = Command(command="info", password=self.master.wallet.password, node=self.master.wallet.node)
+        balance.start()
+        self.label.insert(tk.END, type([balance.stdout]))
+
+
+
+
+class Wallet:
+    def __init__(self, master, login_redirect=None):
+        self.master = master
         self.accounts = ['default']
+        self.password = tk.StringVar()
+        self.db = db
+        self.button_clicked = False
+        self.login_redirect = login_redirect
+        # self.server = Server(master=self.master)
+        self.online_nodes = ["http://95.216.215.107:3413/"]
+        self.node = self.online_nodes[0]
+
+    def password_input(self, widget, **kwargs):
+        self.input = tk.Entry(master=widget, bg="#74e893",
+                              show="*", **kwargs)
+        self.input.bind('<Return>', self.login)
+        return self.input
+
+    def send_password_btn(self, widget, **kwargs):
+        self.widget = widget
+        self.button = tk.Button(master=widget, text="Send",
+                                command=self.login, **kwargs)
+        self.button.bind('<Return>', self.login)
+        return self.button
+
+    def login(self,  event=None):
+        self.password = self.input.get()
+        self.input.delete(0, tk.END)
+        print(f"{self.password} saved")
+        if self.check_password():
+            self.widget.delete('all')
+            self.widget.destroy()
+            self.interface = WalletInterface(master=self.master)
+            self.interface.grid(sticky="news")
+        else:
+            print("NIE")
+            pass
+
+    def check_password(self):
+        check = Command(command="info", password=self.password, node=self.node)
+        check.start()
+        check.join()
+
+        invalid = "Invalid Arguments: Error decrypting wallet seed (check provided password)"
+        success = "Command 'info' completed successfully"
+        if invalid in (check.stdout):
+            print('pass invalid')
+            return False
+        if success in (check.stdout):
+            print('pass valid!!')
+            return True
+
+    def server_is_online(self):
+        check = Command(command="info", password="majkut11", node=self.node)
+        check.start()
+        check.join()
+        offline = "WARNING: Wallet failed to verify data against a live"
+        if offline in check.stdout:
+            print("OFFLINE")
+            return False
+        else:
+            print("ONLINE")
+            return True
 
     def get_seed_file(self):
         print("Clicked!")
@@ -67,7 +171,7 @@ class Wallet:
             file_name = filedialog.askopenfilename(
                 initialdir=r"C:", title="Select path",
                 filetypes=(("all files", "*.*"), ("wallet seed file", "*.seed")))
-            db.file_paths.insert({'name': 'seed', 'entry': file_name})
+            self.db.file_paths.insert({'name': 'seed', 'entry': file_name})
             print(f"{file_name} added to db")
             # copy2(file_name, os.getcwd())
             # return db.file_paths.get(Query()['name'] == "seed")['entry']
@@ -78,6 +182,10 @@ class Wallet:
     def get_secret_api(self):
         pass
 
+    def thread_command(self, target):
+        t = Thread(target=target)
+        t.run()
+
     def command(self, command):
         cmd = f'epic-wallet -p {self.password} {command}'.split(" ")
         process = Popen(cmd, stdout=PIPE, stderr=PIPE, universal_newlines=True, bufsize=1)
@@ -86,6 +194,9 @@ class Wallet:
         # self.console.screen.insert(tk.END, stdout + '\n' + stderr)
         # self.console.screen.yview(tk.END)
         return process
+
+    # def encrypt_password(self):
+    #
 
 
 class Console(Frame):

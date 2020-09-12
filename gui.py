@@ -24,6 +24,7 @@ class HomeFrame(tk.Frame):
         tk.Frame.__init__(self, master, *args, **kwargs)
 
         # Root configuration (layer 1)
+        # self.master.wm_attributes('-transparentcolor', root['bg'])
         self.master.title('Epic-Cash tools')
         self.master.geometry(self.set_size(root=True))
         self.master.config(bg="black", width=self.set_size()[0],
