@@ -80,7 +80,7 @@ class Body(tk.Frame):
         self.home = Home(self, borderwidth=0)
 
         # Body Grid
-        if db.users.all()[0]['first_run']:
+        if db.user.all()[0]['first_run']:
             self.first_time.grid(row=0, column=0, sticky="news")
             # db.users.update({"first_run": False})
         else:

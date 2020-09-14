@@ -12,17 +12,26 @@ from tkinter.scrolledtext import ScrolledText
 from tkinter.ttk import Progressbar
 from decimal import *
 from PIL import Image, ImageTk
-from tinydb import Query
+from tinydb import Query, table
 
 from server import Server
 from tools import *
 from managers import *
-import db
+from db import db, user, file_paths
 import requests
 from requests.auth import HTTPBasicAuth
 from requests_toolbelt.threaded import pool
 
-getcontext().prec = 8
+
+class OwnerAPiThreadManager(ThreadManager):
+    def __init__(self, master):
+        super(ThreadManager, self).__init__()
+        self.master = master
+        self.daemon = True
+
+    def run(self):
+        Command(command="owner_api", password=self.master.master.wallet.password)
+        self.func()
 
 
 class Frame(tk.Frame):
@@ -49,30 +58,37 @@ class HeaderFrame(Frame):
         # self.updater.start()
         # self.robot.start()
 
-    def node_status(self):
-        epic_pass_api_v2 = 'DcxeGBwtZY3FlZcnDFmI'
-        r = requests.get('http://localhost:23413/v1/status', auth=('epic', epic_pass_api_v2))
-        q = 'Connections: ' + str(r.json()['connections']) + ' Height: ' + str(
-            r.json()['tip']['height'])
-        self.text.set(q)
+    # def node_status(self):
+    #     epic_pass_api_v2 = 'DcxeGBwtZY3FlZcnDFmI'
+    #     r = requests.get('http://localhost:23413/v1/status', auth=('epic', epic_pass_api_v2))
+    #     q = 'Connections: ' + str(r.json()['connections']) + ' Height: ' + str(
+    #         r.json()['tip']['height'])
+    #     self.text.set(q)
 
-        # self.after(1000, self.node_status)
+    # self.after(1000, self.node_status)
 
 
 class Command(Thread):
     def __init__(self, command, password, node="local_node"):
+        super().__init__()
+        self._stop_event = threading.Event()
         self.command = command
         self.password = password
         if node == "local_node":
             self.full_cmd = f'epic-wallet -p {self.password} {command}'.split(" ")
         else:
             self.full_cmd = f'epic-wallet -p {self.password} -r {node} {command}'.split(" ")
-        Thread.__init__(self)
 
+    def run(self):
         process = Popen(self.full_cmd, stdout=PIPE, stderr=PIPE,
                         universal_newlines=True, bufsize=1)
         self.stdout, self.stderr = process.communicate()
-        # print(self.stdout)
+
+    def stop(self):
+        self._stop_event.set()
+
+    def stopped(self):
+        return self._stop_event.is_set()
 
 
 class WalletInterface(tk.Frame):
@@ -80,40 +96,60 @@ class WalletInterface(tk.Frame):
         tk.Frame.__init__(self, master, *args, **kwargs)
         print('gui')
         self.balance = tk.StringVar()
+        self.owner_api_text = tk.StringVar()
         self.bg_img = tk.PhotoImage(file=r'C:\epic-tools\img\main_screen_bg.png')
         self.btns_area = tk.Canvas(self, width=450, height=800, borderwidth=0,
                                    highlightthickness=0)
         self.balance = tk.StringVar()
-
+        self.owner_api = Command(command="owner_api", password=self.master.wallet.password)
+        # self.owner_api.daemon = True
         self.columnconfigure(0, minsize=500, weight=1)
         self.grid_rowconfigure(0, minsize=750, weight=1)
 
         # WalletInterface Widgets
         self.btns_area.grid(sticky="news")
-        self.btns_area.create_image(0, 0, image=self.bg_img, anchor='nw')
         self.get_balance()
-        self.btns_area.create_text(240, 105, fill="gold", font="Times 28 bold",
+        self.btns_area.create_image(0, 0, image=self.bg_img, anchor='nw')
+        self.btns_area.create_text(240, 105, fill="gold", font="Times 22 bold",
                                    text=self.balance.get())
-        
+
         self.run_console_btn = tk.Button(self, text="Run command line console",
                                          command=self.master.wallet.run_console, **kwargs)
-        self.btns_area.create_window(int(self.btns_area['width']) / 2, 600,
+        self.owner_api_btn = tk.Button(self, text="Check if Owner API is listening",
+                                       command=self.check_owner_api, **kwargs)
+
+        self.btns_area.create_window(int(self.btns_area['width']) / 2, 500,
                                      window=self.run_console_btn)
+        self.btns_area.create_window(int(self.btns_area['width']) / 2, 600,
+                                     window=self.owner_api_btn)
+        self.btns_area.create_text(240, 700, fill="gold", font="Times 22 bold",
+                                   text=self.owner_api_text.get())
+
+    def check_owner_api(self):
+        print(self.owner_api.is_alive())
+        self.owner_api_text.set(self.owner_api.is_alive())
 
     def get_balance(self):
-        data = APIManager()
-        balance = data.run_query(query="retrieve_summary_info")
-        self.balance.set(balance)
+        data = APIManager(master=self)
+        self.owner_api.start()
+        data = data.run_query(query="retrieve_summary_info")
+        self.balance.set(data)
+        self.owner_api.stop()
 
 
 class APIManager:
-    def __init__(self, api_secret="DcxeGBwtZY3FlZcnDFmI", url=fr"http://localhost:23420/v1/wallet/owner/"):
-        self.url = url
+    def __init__(self, master, hostname="localhost", port="23420",
+                 api_secret="DcxeGBwtZY3FlZcnDFmI", path=fr"/v1/wallet/owner/"):
+        self.master = master
+        self.hostname = hostname
+        self.method = []
+        self.path = path
+        self.port = port
+        self.url = f"http://{self.hostname}:{self.port}{self.path}"
         self.api_secret = api_secret
         self.auth = ('epic', self.api_secret)
 
     def run_query(self, query, params="", output='json'):
-        response = {}
         r = requests.get(self.url + query + params, auth=self.auth)
         print(self.url + query + params)
         if output == 'json':
@@ -136,7 +172,7 @@ class Wallet:
         self.master = master
         self.accounts = ['default']
         self.password = tk.StringVar()
-        self.db = db
+        self.user = user
         self.button_clicked = False
         self.login_redirect = login_redirect
         # self.server = Server(master=self.master)
@@ -167,30 +203,26 @@ class Wallet:
         self.password = self.input.get()
         self.input.delete(0, tk.END)
         print(f"{self.password} saved")
-        self.widget.itemconfigure(self.master.pass_info, text="Loading...")
 
         if self.check_password():
+            self.master.btns_area.itemconfigure(self.master.pass_info, text="Loading...")
             self.widget.delete('all')
             self.widget.destroy()
             self.interface = WalletInterface(master=self.master)
             self.interface.grid(sticky="news")
 
         else:
-            self.widget.itemconfigure(self.master.pass_info, text="Wrong password")
+            self.master.btns_area.itemconfigure(self.master.pass_info, text="Wrong password")
             print("NIE")
             pass
 
     def check_password(self):
-        check = Command(command="info", password=self.password, node=self.node)
-        check.start()
-        check.join()
-
-        invalid = "Invalid Arguments: Error decrypting wallet seed (check provided password)"
-        success = "Command 'info' completed successfully"
-        if invalid in (check.stdout):
+        correct_pass = self.user.get(Query()['name'] == 'default')['password']
+        # print(correct_pass)
+        if correct_pass != self.password:
             print('pass invalid')
             return False
-        if success in (check.stdout):
+        if correct_pass == self.password:
             print('pass valid!!')
             return True
 
@@ -208,11 +240,11 @@ class Wallet:
 
     def get_seed_file(self):
         print("Clicked!")
-        if len(db.file_paths.search(Query()['name'] == "seed")) == 0:
+        if len(file_paths.search(Query()['name'] == "seed")) == 0:
             file_name = filedialog.askopenfilename(
                 initialdir=r"C:", title="Select path",
                 filetypes=(("all files", "*.*"), ("wallet seed file", "*.seed")))
-            self.db.file_paths.insert({'name': 'seed', 'entry': file_name})
+            file_paths.insert({'name': 'seed', 'entry': file_name})
             print(f"{file_name} added to db")
             # copy2(file_name, os.getcwd())
             # return db.file_paths.get(Query()['name'] == "seed")['entry']

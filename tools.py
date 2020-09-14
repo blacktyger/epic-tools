@@ -21,10 +21,22 @@ s = {
     }
 
 
+class ThreadManager(threading.Thread):
+    def __init__(self, name, func):
+        super(ThreadManager, self).__init__()
+
+        self.name = name
+        self.func = func
+
+    def run(self):
+        self.data = self.func()
+
+
 class Robot(threading.Thread):
-    def __init__(self, name, label_queue, func):
+    def __init__(self, name, label_queue, func, wait=1):
         super().__init__(name=name)
         self.daemon = True
+        self.wait = wait
         self.label_queue = label_queue
         self.func = func
 
@@ -32,7 +44,7 @@ class Robot(threading.Thread):
         while True:
             q = self.func()
             self.label_queue.put(q)
-            time.sleep(1)
+            time.sleep(self.wait)
 
 
 class LabelUpdater(threading.Thread):
@@ -65,33 +77,55 @@ class NodeStatus(tk.Frame):
     def __init__(self, master, *args, **kwargs):
         tk.Frame.__init__(self, master, *args, **kwargs)
         self.label_queue = queue.Queue()
+        self.explorer_queue = queue.Queue()
         self.text = tk.StringVar()
         self.text.set(" Connecting to node...")
+        self.explorer_height = tk.StringVar()
+        self.node_height = tk.StringVar()
         self.label = tk.Label(self, textvariable=self.text).grid()
-        self.robot = Robot("robot", self.label_queue, self.node_status)
+        self.robot = Robot(name="api_status", label_queue=self.label_queue, func=self.node_status)
         self.updater = LabelUpdater(master=self, name="updater",
                                     label_queue=self.label_queue,
                                     variable=self.text)
         self.updater.start()
         self.robot.start()
 
+        self.explorer_label = tk.Label(self, textvariable=self.explorer_height).grid()
+        self.explorer_robot = Robot(name="explorer_height", label_queue=self.explorer_queue,
+                                    func=self.explorer_status)
+        self.explorer_updater = LabelUpdater(master=self, name="explorer_height",
+                                             label_queue=self.explorer_queue,
+                                             variable=self.explorer_height)
+        self.explorer_updater.start()
+        self.explorer_robot.start()
+
+    def node_api(self):
+        r = requests.get('http://localhost:23413/v1/status').json()
+        response = {
+            'height': r['tip']['height'],
+            'peers': r['connections']
+            }
+        return response
+
+    def explorer_status(self):
+        data = requests.get("https://epic-ticker.tech/api/explorer/").json()[0]['height']
+        self.explorer_height.set({str(data)})
+
     def node_status(self):
-        epic_pass_api_v2 = 'DcxeGBwtZY3FlZcnDFmI'
         try:
-            r = requests.get('http://localhost:23413/v1/status', auth=('epic', epic_pass_api_v2))
-            q = f"Block: {str(r.json()['tip']['height'])}   Peers: {str(r.json()['connections'])  }"
+            t = self.node_api()
+            q = f"Block: {t['height']}   Peers:  {t['peers']}"
             self.text.set(q)
+            self.node_height.set(t['height'])
         except requests.exceptions.ConnectionError as e:
-            self.text.set(f" Connecting to node...")
-
-
-def get_db(db):
-    return db
+            self.text.set(f" Not Connected")
 
 
 def get_color(status):
     if status == "Online":
         return "green"
+    elif status == "Sync...":
+        return "yellow"
     else:
         return "red"
 
@@ -155,8 +189,8 @@ class Msg:
                 return string
 
     def show(self):
-        print(f'{self.get_title()} [{datetime.now().strftime("%H:%M:%S")}]: {str(current_thread()).split("(")[1].replace(")", "").split(" ")[0]} {self.text}')
+        print(
+            f'{self.get_title()} [{datetime.now().strftime("%H:%M:%S")}]: {str(current_thread()).split("(")[1].replace(")", "").split(" ")[0]} {self.text}')
 
     def __repr__(self):
         return f'{self.get_title()}[{datetime.now().strftime("%H:%M:%S")}]: {self.text}'
-

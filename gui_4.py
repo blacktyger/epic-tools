@@ -59,13 +59,13 @@ class HomeFirstTime(tk.Frame):
             # EXISTING WALLET LOGIN
             # self.btns_area.create_text(250, 150, fill="white", font="Times 20 bold",
             #                            text="LOGIN TO WALLET")
-            pass_input = self.wallet.password_input(widget=self.btns_area)
-            pass_btn = self.wallet.send_password_btn(widget=self.btns_area, bg="gold")
+            self.pass_input = self.wallet.password_input(widget=self.btns_area)
+            self.pass_btn = self.wallet.send_password_btn(widget=self.btns_area, bg="gold")
 
             self.btns_area.create_window(int(self.btns_area['width']) / 2, 410,
-                                         window=pass_input, height=40, width=380)
+                                         window=self.pass_input, height=40, width=380)
             self.btns_area.create_window(int(self.btns_area['width']) / 2, 500,
-                                         window=pass_btn, height=34, width=300)
+                                         window=self.pass_btn, height=34, width=300)
 
             self.pass_info = self.btns_area.create_text(int(self.btns_area['width']) / 2, 445,
                                                         fill="white", font="Helvetica 11 bold",
@@ -93,8 +93,11 @@ class HomeFirstTime(tk.Frame):
             return False
 
     def import_command(self):
-        self.import_wallet_btn.destroy()
-        self.create_wallet_btn.destroy()
+        self.btns_area.delete('all')
+        # self.import_wallet_btn.destroy()
+        # self.create_wallet_btn.destroy()
+        # self.pass_input.destroy()
+        # self.pass_info.destroy()
         self.wallet_import.grid(row=0, column=0, sticky="news")
 
     def run_wallet(self):

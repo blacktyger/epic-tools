@@ -9,9 +9,12 @@
             "name": "seed"
         }
     },
+
     "user": {
         "1": {
-            "first_run": true
-        }
-    }
+            "first_run": true,
+            "password": "majkut11",
+            "name": "default"
+
+        }}
 }
