@@ -32,7 +32,7 @@ def check_process(name):
         try:
             # Check if process name contains the given name string.
             if name.lower() in process.name().lower():
-                return True
+                return process
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
     return False
@@ -72,6 +72,7 @@ def process_manager(name, kill=False, get_list=False):
                     # print(f"[{now}]: {str(process).split('(')[1][:-1]}")
                     if kill:
                         kill_process(process)
+                        print(f"{process} killed")
             else:
                 return False
 

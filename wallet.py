@@ -11,9 +11,12 @@ from tkinter import filedialog, Text
 from tkinter.scrolledtext import ScrolledText
 from tkinter.ttk import Progressbar
 from decimal import *
+
+import psutil
 from PIL import Image, ImageTk
 from tinydb import Query, table
 
+from check_process import process_manager, check_process, kill_process
 from server import Server
 from tools import *
 from managers import *
@@ -21,6 +24,8 @@ from db import db, user, file_paths
 import requests
 from requests.auth import HTTPBasicAuth
 from requests_toolbelt.threaded import pool
+
+processes = []
 
 
 class OwnerAPiThreadManager(ThreadManager):
@@ -47,31 +52,10 @@ class HeaderFrame(Frame):
         Background(widget=self, img_path=r'C:\epic-tools\img\wallet.png',
                    sticky='wn')
 
-        # self.label_queue = queue.Queue()
-        # self.text = tk.StringVar()
-        # self.text.set("Syncing...")
-        # self.label = tk.Label(self, textvariable=self.text).grid()
-        # self.robot = Robot("robot", self.label_queue, self.node_status)
-        # self.updater = LabelUpdater(master=self, name="updater",
-        #                             label_queue=self.label_queue,
-        #                             variable=self.text)
-        # self.updater.start()
-        # self.robot.start()
-
-    # def node_status(self):
-    #     epic_pass_api_v2 = 'DcxeGBwtZY3FlZcnDFmI'
-    #     r = requests.get('http://localhost:23413/v1/status', auth=('epic', epic_pass_api_v2))
-    #     q = 'Connections: ' + str(r.json()['connections']) + ' Height: ' + str(
-    #         r.json()['tip']['height'])
-    #     self.text.set(q)
-
-    # self.after(1000, self.node_status)
-
 
 class Command(Thread):
     def __init__(self, command, password, node="local_node"):
         super().__init__()
-        self._stop_event = threading.Event()
         self.command = command
         self.password = password
         if node == "local_node":
@@ -80,15 +64,58 @@ class Command(Thread):
             self.full_cmd = f'epic-wallet -p {self.password} -r {node} {command}'.split(" ")
 
     def run(self):
-        process = Popen(self.full_cmd, stdout=PIPE, stderr=PIPE,
-                        universal_newlines=True, bufsize=1)
-        self.stdout, self.stderr = process.communicate()
+        self.process = Popen(self.full_cmd, stdout=PIPE, stderr=PIPE,
+                             universal_newlines=True, bufsize=1)
+        self.stdout, self.stderr = self.process.communicate()
 
-    def stop(self):
-        self._stop_event.set()
 
-    def stopped(self):
-        return self._stop_event.is_set()
+class TickerData:
+    def __init__(self):
+        self.explorer_url = "https://epic-ticker.tech/api/explorer/"
+        self.explorer_data = requests.get(self.explorer_url).json()[0]
+        self.epic_url = "https://epic-ticker.tech/api/data"
+        self.epic_data = requests.get(self.epic_url).json()
+
+    def get_explorer_query(self, query):
+        for key, value in self.explorer_data.items():
+            if key == query:
+                return value
+
+    def get_epic_query(self, query, currency='usd'):
+        if currency == "usd" or "usdt":
+            index = 1
+        else:
+            index = 0
+        for key, value in self.epic_data[index].items():
+            if key == query:
+                return value
+
+
+class OwnerApi(Command):
+    def __init__(self, target, name, password, command="owner-api", node='local_node'):
+        super().__init__(command, password)
+        self.name = name
+        self.command = command
+        self.password = password
+        self.target = target
+
+    def run(self):
+        owner_thread = Command(command="owner_api", password=self.password)
+        owner_thread.start()
+        target_thread = threading.Thread(name='target_thread', target=self.target)
+        target_thread.start()
+        time.sleep(3)
+        self.kill_listener()
+
+    def kill_listener(self):
+        x = check_process(name='epic-wallet.exe')
+        # x = process_manager(name="epic-wallet.exe", kill=True)
+        try:
+            if x:
+                print(f"KILLED: {x}")
+                x.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, AttributeError):
+            print("trying to kill owner listener")
 
 
 class WalletInterface(tk.Frame):
@@ -96,45 +123,67 @@ class WalletInterface(tk.Frame):
         tk.Frame.__init__(self, master, *args, **kwargs)
         print('gui')
         self.balance = tk.StringVar()
-        self.owner_api_text = tk.StringVar()
+        self.balance.set("Loading...")
+        self.retrieve_txs_list = []
         self.bg_img = tk.PhotoImage(file=r'C:\epic-tools\img\main_screen_bg.png')
         self.btns_area = tk.Canvas(self, width=450, height=800, borderwidth=0,
                                    highlightthickness=0)
-        self.balance = tk.StringVar()
-        self.owner_api = Command(command="owner_api", password=self.master.wallet.password)
-        # self.owner_api.daemon = True
+        self.api_data = APIManager(master=self)
+        self.ticker = TickerData()
+        self.balance_owner_api = OwnerApi(name="balance_owner_api", password=self.master.wallet.password,
+                                          target=self.get_balance)
+        self.balance_owner_api.start()
+        self.retrieve_txs_owner_api = OwnerApi(name="retrieve_txs_owner_api", password=self.master.wallet.password,
+                                               target=self.api_data.retrieve_txs)
+        self.retrieve_txs_owner_api.start()
         self.columnconfigure(0, minsize=500, weight=1)
         self.grid_rowconfigure(0, minsize=750, weight=1)
 
         # WalletInterface Widgets
         self.btns_area.grid(sticky="news")
-        self.get_balance()
         self.btns_area.create_image(0, 0, image=self.bg_img, anchor='nw')
-        self.btns_area.create_text(240, 105, fill="gold", font="Times 22 bold",
-                                   text=self.balance.get())
+        self.balance_text = self.btns_area.create_text(210, 100, fill="gold", font="Times 24 bold",
+                                                       text=self.balance.get())
+        self.value_text = self.btns_area.create_text(210, 130, fill="green", font="Times 15 bold",
+                                                     text=" ")
+        self.btns_area.itemconfig(self.balance_text, text=self.balance.get())
 
         self.run_console_btn = tk.Button(self, text="Run command line console",
                                          command=self.master.wallet.run_console, **kwargs)
-        self.owner_api_btn = tk.Button(self, text="Check if Owner API is listening",
-                                       command=self.check_owner_api, **kwargs)
-
         self.btns_area.create_window(int(self.btns_area['width']) / 2, 500,
                                      window=self.run_console_btn)
-        self.btns_area.create_window(int(self.btns_area['width']) / 2, 600,
-                                     window=self.owner_api_btn)
-        self.btns_area.create_text(240, 700, fill="gold", font="Times 22 bold",
-                                   text=self.owner_api_text.get())
 
-    def check_owner_api(self):
-        print(self.owner_api.is_alive())
-        self.owner_api_text.set(self.owner_api.is_alive())
+    def get_txs_list(self):
+        def color(num):
+            if num > 0:
+                return "green"
+            elif num == 0:
+                return "white"
+            else:
+                return "red"
+
+        for i, tx in enumerate(self.retrieve_txs_list):
+            tx_balance = (Decimal(tx['amount_credited']) - Decimal(tx['amount_debited'])) / 10 ** 8
+
+            self.btns_area.create_text(int(self.btns_area['width']) / 2, 350 + (i*15),
+                                       fill=color(tx_balance), font="Times 15 bold",
+                                       text=tx_balance)
 
     def get_balance(self):
-        data = APIManager(master=self)
-        self.owner_api.start()
-        data = data.run_query(query="retrieve_summary_info")
+        data = self.api_data.run_query()
         self.balance.set(data)
-        self.owner_api.stop()
+        self.btns_area.itemconfig(self.balance_text, text=self.balance.get())
+        self.calculate_price()
+        self.get_txs_list()
+        print(f"Self.balance = {self.balance.get()}")
+
+    def calculate_price(self):
+        price_in_usd = Decimal(self.ticker.get_epic_query(query="avg_price"))
+        print(self.balance.get())
+        value_in_usd = Decimal(str(self.balance.get())) * price_in_usd
+        value_in_usd = value_in_usd.quantize(Decimal('.01'))
+        self.btns_area.itemconfig(self.value_text, text=f" ~ $ {value_in_usd}")
+        return value_in_usd
 
 
 class APIManager:
@@ -142,26 +191,34 @@ class APIManager:
                  api_secret="DcxeGBwtZY3FlZcnDFmI", path=fr"/v1/wallet/owner/"):
         self.master = master
         self.hostname = hostname
-        self.method = []
+        self.queries = ["retrieve_summary_info", "retrieve_txs"]
         self.path = path
         self.port = port
         self.url = f"http://{self.hostname}:{self.port}{self.path}"
         self.api_secret = api_secret
         self.auth = ('epic', self.api_secret)
 
-    def run_query(self, query, params="", output='json'):
-        r = requests.get(self.url + query + params, auth=self.auth)
-        print(self.url + query + params)
+    def retrieve_txs(self, params="", output='json'):
+        r = requests.get(self.url + self.queries[1] + params, auth=self.auth)
+        if output == 'json':
+            response = r.json()[1]
+            for tx in response:
+                self.master.retrieve_txs_list.append(tx)
+            return response
+
+    def run_query(self, params="", output='json'):
+        r = requests.get(self.url + self.queries[0] + params, auth=self.auth)
+        print(self.url + self.queries[0] + params)
         if output == 'json':
             response = r.json()[1]
             data = Decimal(response['total']) / 10 ** 8
             data = data.quantize(Decimal('.0001'), rounding=ROUND_UP)
+            self.update_field(field=self.master.balance, data=data)
+            print(self.master.balance.get())
             return data
 
-    def insert(self, widget, query):
-        data = Decimal(self.run_query(query=query)['total']) / 10 ** 8
-        data = data.quantize(Decimal('.0001'), rounding=ROUND_UP)
-        widget.insert(tk.END, data)
+    def update_field(self, data, field):
+        self.master.balance.set(data)
 
     def match_query(self):
         pass
@@ -175,7 +232,6 @@ class Wallet:
         self.user = user
         self.button_clicked = False
         self.login_redirect = login_redirect
-        # self.server = Server(master=self.master)
         self.online_nodes = ["http://95.216.215.107:3413/"]
         self.node = self.online_nodes[0]
 

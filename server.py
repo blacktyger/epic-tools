@@ -60,16 +60,6 @@ class Server:
         else:
             return f"Offline"
 
-    # try:
-    #     self.status.set("Sync...")
-    #     while int(self.sync.explorer_height.get()) - int(self.sync.node_height) > 5:
-    #         self.status.set("Sync...")
-    #         self.master.change_color()
-    #         sleep(1)
-    #         self.sync.api_status()
-    # except ValueError as er:
-    #     print("ERROR: ", er)
-
     def run_server(self):
         def config():
             self.button.config(text='Close Server', command=self.quit_server,
